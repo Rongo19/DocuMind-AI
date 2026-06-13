@@ -1,19 +1,42 @@
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 from app.api import upload, chat, documents
 from app.core.config import PAGES_DIR
+from app.core.limiter import limiter
 
 app = FastAPI(title="Document Intelligence API")
 
-# CORS — allow Next.js frontend
+# Rate limiter
+app.state.limiter = limiter
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"error": "Too many requests. Please slow down."}
+    )
+
+# Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+# CORS — only allow our frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["POST", "GET", "DELETE"],
+    allow_headers=["Content-Type"],
 )
 
 # Serve page images statically
@@ -27,4 +50,4 @@ app.include_router(documents.router, prefix="/api")
 
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "Document Intelligence API is running"} 
+    return {"status": "ok", "message": "Document Intelligence API is running"}

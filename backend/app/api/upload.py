@@ -1,10 +1,12 @@
 import os
 import uuid
-import asyncio
-from fastapi import APIRouter, UploadFile, File, HTTPException
+import threading
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from typing import List
-from app.core.config import UPLOAD_DIR, MAX_FILE_SIZE_MB, ALLOWED_EXTENSIONS
+from app.core.config import UPLOAD_DIR, ALLOWED_EXTENSIONS
 from app.core.store import add_document, update_status
+from app.core.security import full_file_validation, sanitize_filename
+from app.core.limiter import limiter
 from app.services.parser import parse_document
 from app.services.classifier import classify_document
 from app.services.rag import index_document
@@ -14,27 +16,23 @@ router = APIRouter()
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def validate_file(file: UploadFile):
-    ext = file.filename.rsplit(".", 1)[-1].lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(400, f"File type .{ext} not allowed")
-
-
-async def process_document(doc_id: str, file_path: str, filename: str):
+def process_document_sync(doc_id: str, file_path: str, filename: str):
     try:
-        # Step 1: Parse
+        print(f"[{doc_id}] Starting parse: {filename}")
         update_status(doc_id, "parsing")
         pages = parse_document(file_path, doc_id, filename)
+        print(f"[{doc_id}] Parsed {len(pages)} pages")
 
-        # Step 2: Classify
         update_status(doc_id, "classifying")
+        print(f"[{doc_id}] Classifying...")
         classification = classify_document(pages)
+        print(f"[{doc_id}] Classified: {classification.get('document_type')}")
 
-        # Step 3: Index
         update_status(doc_id, "indexing")
+        print(f"[{doc_id}] Indexing...")
         chunk_count = index_document(doc_id, filename, pages)
+        print(f"[{doc_id}] Indexed {chunk_count} chunks")
 
-        # Done
         update_status(doc_id, "ready", {
             "classification": classification,
             "page_count": len(pages),
@@ -48,36 +46,44 @@ async def process_document(doc_id: str, file_path: str, filename: str):
                 for p in pages
             ]
         })
+        print(f"[{doc_id}] Done!")
 
     except Exception as e:
+        print(f"[{doc_id}] ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         update_status(doc_id, "error", {"error": str(e)})
 
 
 @router.post("/upload")
-async def upload_files(files: List[UploadFile] = File(...)):
+@limiter.limit("10/minute")
+async def upload_files(request: Request, files: List[UploadFile] = File(...)):
+    if len(files) > 10:
+        raise HTTPException(400, "Maximum 10 files per upload")
+
     results = []
 
     for file in files:
-        validate_file(file)
-
-        # Check file size
         content = await file.read()
-        if len(content) > MAX_FILE_SIZE_MB * 1024 * 1024:
-            raise HTTPException(400, f"{file.filename} exceeds {MAX_FILE_SIZE_MB}MB limit")
 
-        # Save file
+        # Security validation
+        full_file_validation(file, content)
+
+        # Sanitize filename for display only
+        safe_display_name = sanitize_filename(file.filename)
+
+        # Generate UUID-based storage name
         doc_id = str(uuid.uuid4())
         ext = file.filename.rsplit(".", 1)[-1].lower()
-        safe_filename = f"{doc_id}.{ext}"
-        file_path = os.path.join(UPLOAD_DIR, safe_filename)
+        storage_filename = f"{doc_id}.{ext}"
+        file_path = os.path.join(UPLOAD_DIR, storage_filename)
 
         with open(file_path, "wb") as f:
             f.write(content)
 
-        # Register in store
         add_document(doc_id, {
             "doc_id": doc_id,
-            "filename": file.filename,
+            "filename": safe_display_name,
             "file_path": file_path,
             "status": "queued",
             "classification": None,
@@ -86,46 +92,17 @@ async def upload_files(files: List[UploadFile] = File(...)):
             "pages": [],
         })
 
-        # Process in background
-        asyncio.create_task(
-            asyncio.to_thread(
-                process_document_sync, doc_id, file_path, file.filename
-            )
+        thread = threading.Thread(
+            target=process_document_sync,
+            args=(doc_id, file_path, safe_display_name),
+            daemon=True
         )
+        thread.start()
 
-        results.append({"doc_id": doc_id, "filename": file.filename, "status": "queued"})
+        results.append({
+            "doc_id": doc_id,
+            "filename": safe_display_name,
+            "status": "queued"
+        })
 
     return {"uploaded": results}
-
-
-def process_document_sync(doc_id: str, file_path: str, filename: str):
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        update_status(doc_id, "parsing")
-        pages = parse_document(file_path, doc_id, filename)
-
-        update_status(doc_id, "classifying")
-        classification = classify_document(pages)
-
-        update_status(doc_id, "indexing")
-        chunk_count = index_document(doc_id, filename, pages)
-
-        update_status(doc_id, "ready", {
-            "classification": classification,
-            "page_count": len(pages),
-            "chunk_count": chunk_count,
-            "pages": [
-                {
-                    "page_num": p["page_num"],
-                    "image_url": p["image_url"],
-                    "has_tables": p["has_tables"],
-                }
-                for p in pages
-            ]
-        })
-    except Exception as e:
-        update_status(doc_id, "error", {"error": str(e)})
-    finally:
-        loop.close()

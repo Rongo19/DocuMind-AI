@@ -70,11 +70,16 @@ def index_document(doc_id: str, filename: str, pages: list[dict]):
 
 # ── retrieval ──────────────────────────────────────────────────────────────
 def retrieve_chunks(query: str, top_k: int = 5) -> list[dict]:
+    # Check if collection has any documents
+    total = collection.count()
+    if total == 0:
+        return []
+
     query_embedding = embedder.encode(query).tolist()
 
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=top_k,
+        n_results=min(top_k, total),
         include=["documents", "metadatas", "distances"]
     )
 
@@ -93,11 +98,10 @@ def retrieve_chunks(query: str, top_k: int = 5) -> list[dict]:
 def generate_answer(query: str, chunks: list[dict]) -> dict:
     if not chunks:
         return {
-            "answer": "I could not find any relevant information in the uploaded documents.",
+            "answer": "No documents have been uploaded yet. Please upload documents first using the Upload page.",
             "citations": []
         }
 
-    # Build context string
     context = ""
     for i, chunk in enumerate(chunks):
         meta = chunk["metadata"]
@@ -107,10 +111,10 @@ def generate_answer(query: str, chunks: list[dict]) -> dict:
     prompt = f"""You are a helpful assistant that answers questions based strictly on the provided document context.
 
 Rules:
-- Answer only using the context below
+- Answer ONLY using the context below
 - Cite sources inline like this: [filename, Page X]
-- If the answer is not in the context, say "I could not find this information in the uploaded documents."
-- Do not make up information
+- If the answer is not in the context, say exactly: "I could not find this information in the uploaded documents."
+- Do NOT make up or add information from outside the context
 
 Context:
 {context}
@@ -124,19 +128,18 @@ Answer:"""
         messages=[
             {
                 "role": "system",
-                "content": "You are a helpful assistant. Answer questions using only the provided context and always cite your sources."
+                "content": "You are a helpful assistant. Answer questions ONLY using the provided context. Never use outside knowledge."
             },
             {
                 "role": "user",
                 "content": prompt
             }
         ],
-        temperature=0.2,
+        temperature=0.1,
     )
 
     answer = response.choices[0].message.content.strip()
 
-    # Build citations list
     citations = []
     seen = set()
     for chunk in chunks:
@@ -160,8 +163,14 @@ Answer:"""
 # ── main query function ────────────────────────────────────────────────────
 def query_documents(query: str, top_k: int = 5) -> dict:
     chunks = retrieve_chunks(query, top_k)
-
-    # Filter low relevance chunks
     chunks = [c for c in chunks if c["score"] > 0.1]
-
     return generate_answer(query, chunks)
+
+def delete_document_chunks(doc_id: str):
+    try:
+        results = collection.get(where={"doc_id": doc_id})
+        if results and results["ids"]:
+            collection.delete(ids=results["ids"])
+            print(f"Deleted {len(results['ids'])} chunks for doc {doc_id}")
+    except Exception as e:
+        print(f"Error deleting chunks for {doc_id}: {e}")
