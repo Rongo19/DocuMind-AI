@@ -149,14 +149,12 @@ export default function ChatPage() {
                       <button
                         key={j}
                         onClick={() =>
-                          setSelectedImage(
-                            `http://localhost:8000${c.image_url}`
-                          )
+                          setSelectedImage(`${process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"}${c.image_url}`)
                         }
                         className="bg-gray-700 hover:bg-gray-600 rounded-lg p-2 text-left transition-colors"
                       >
                         <img
-                          src={`http://localhost:8000${c.image_url}`}
+                          src={`${process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000"}${c.image_url}`}
                           alt={`Page ${c.page_num}`}
                           className="w-16 h-20 object-cover rounded mb-1"
                         />
