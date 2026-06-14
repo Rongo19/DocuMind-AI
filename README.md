@@ -1,69 +1,72 @@
-# DocuMind-AI - Agentic RAG System
+# DocuMind-AI
 
-A full-stack web app that ingests messy real-world documents, classifies them, and powers a chatbot with grounded citations showing the exact source page.
+A web app that ingests messy documents (scanned PDFs, handwritten pages, tables, images), extracts content with OCR, classifies each document using an LLM, and powers a chatbot that answers questions with grounded citations showing the exact source page.
+
+DocuMind-AI was built for the AI Engineer Intern Assessment — Build Fast with AI.
+
+## Live Demo
+
+- Frontend: https://docu-mind-ai-lemon.vercel.app
+- Backend API: https://documind-ai-2zcz.onrender.com
+
+> Note: Backend is on Render's free tier, which sleeps after inactivity — the first request may take 30-60 seconds to wake up.
 
 ## Features
 
-- **Document Parser** — handles scanned PDFs, image-heavy files, tables, and plain text using pdfplumber, pdf2image, and pytesseract OCR
-- **Document Classifier** — classifies each document across type, topic, sensitivity level, and content characteristics using Groq LLaMA
-- **Agentic RAG** — retrieves relevant chunks and generates answers with inline citations and page thumbnails
-- **Chatbot Page** — multi-turn conversation with source thumbnails and full-page viewer
-- **Bulk Upload Page** — upload multiple documents, track processing status, view and delete documents
-- **Security** — file validation, rate limiting, path traversal protection, security headers, input sanitization
+- **Document Parser** — extracts text from PDFs and images using pdfplumber, pdf2image, and pytesseract OCR. Each page stores extracted text + a rendered page image.
+- **Document Classifier** — classifies each document (type, topic, summary, sensitivity, tags, etc.) as structured JSON using Groq's LLaMA 3.3 70B.
+- **Agentic RAG** — chunks and embeds text (sentence-transformers + ChromaDB), retrieves relevant chunks, and answers with inline citations (filename + page number). Says "I could not find this information" instead of hallucinating.
+- **Chatbot Page** — multi-turn chat with citations and clickable page thumbnails.
+- **Bulk Upload Page** — drag-and-drop multiple files, shows per-file status (parsing → classifying → indexing → ready), and lets you view/delete documents.
+- **Voice Input (Bonus)** — real-time speech-to-text using the browser's Web Speech API, with live transcript.
 
-## Architecture
+## Tech Stack
+
+- Frontend: Next.js (TypeScript) + Tailwind CSS
+- Backend: FastAPI (Python)
+- OCR/Parsing: pdfplumber, pdf2image, pytesseract
+- Classification + RAG answers: Groq API (free tier)
+- Embeddings: sentence-transformers (local, free)
+- Vector store: ChromaDB
+- Deployment: Render (backend, Docker) + Vercel (frontend)
+
+## Project Structure
 
 ```
-document-intelligence/
-├── backend/                  # FastAPI Python backend
+DOC_AI/
+├── backend/
 │   ├── app/
-│   │   ├── api/              # Route handlers
-│   │   │   ├── upload.py     # File upload + processing
-│   │   │   ├── chat.py       # RAG chat endpoint
-│   │   │   └── documents.py  # Document management
-│   │   ├── core/             # Config, security, store
-│   │   │   ├── config.py
-│   │   │   ├── security.py
-│   │   │   ├── limiter.py
-│   │   │   └── store.py
-│   │   ├── services/         # Core logic
-│   │   │   ├── parser.py     # PDF + OCR parsing
-│   │   │   ├── classifier.py # LLM classification
-│   │   │   └── rag.py        # Embeddings + retrieval
-│   │   └── main.py
-│   ├── sample_docs/          # 5 sample documents
-│   └── storage/              # Runtime storage (gitignored)
-└── frontend/                 # Next.js TypeScript frontend
-    └── app/
-        ├── page.tsx          # Chatbot page
-        └── upload/page.tsx   # Bulk upload page
+│   │   ├── api/          # upload, chat, documents routes
+│   │   ├── core/         # config, security, rate limiting, storage
+│   │   └── services/     # parser, classifier, rag
+│   ├── sample_docs/       # 5 sample documents
+│   ├── create_samples.py  # generates sample PDFs
+│   ├── seed_samples.py    # indexes sample_docs into the knowledge base
+│   └── Dockerfile
+└── frontend/
+    ├── app/               # chatbot page + upload page
+    ├── components/        # navbar, processing banner
+    └── lib/                # api client, voice input hook
 ```
 
-## Setup
+## Running Locally
 
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+
-- Tesseract OCR installed
-- Poppler installed
+- Tesseract OCR and Poppler installed and on PATH
+- A free Groq API key from https://console.groq.com
 
-### 1. Clone the repo
-
-```bash
-git clone https://github.com/Rongo19/document-intelligence.git
-cd document-intelligence
-```
-
-### 2. Backend setup
+### Backend
 
 ```bash
 cd backend
 python -m venv venv
-venv\Scripts\activate        # Windows
+venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Create a `.env` file in `backend/`:
+Create `backend/.env`:
 
 ```
 GROQ_API_KEY=your_groq_api_key_here
@@ -76,77 +79,87 @@ TESSERACT_PATH=C:\Program Files\Tesseract-OCR\tesseract.exe
 POPPLER_PATH=C:\poppler\Library\bin
 ```
 
-Generate sample documents:
+Generate and load sample documents, then start the server:
 
 ```bash
 python create_samples.py
-```
-
-Start the backend:
-
-```bash
+python seed_samples.py
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Frontend setup
+### Frontend
 
 ```bash
 cd frontend
 npm install
+```
+
+Create `frontend/.env.local`:
+
+```
+NEXT_PUBLIC_API_URL=http://localhost:8000/api
+NEXT_PUBLIC_API_BASE=http://localhost:8000
+```
+
+```bash
 npm run dev
 ```
 
-### 4. Open the app
-
+Open:
 - Chatbot: http://localhost:3000
-- Upload: http://localhost:3000/upload
-- API docs: http://localhost:8000/docs
+- Bulk Upload: http://localhost:3000/upload
 
-### 5. Load sample documents
+## Usage
 
-Upload the PDFs from `backend/sample_docs/` using the Upload page — they will be parsed, classified, and indexed automatically.
+1. Go to **Upload**, drag in PDFs/images (sample docs are pre-loaded if seeded).
+2. Watch status move through Parsing → Classifying → Indexing → Ready.
+3. Go to **Chatbot** and ask questions — answers show inline citations with page thumbnails. Click a thumbnail for the full page.
+4. Click the 🎤 icon for voice input (Chrome/Edge recommended).
+5. Delete unneeded documents from the Upload page.
 
 ## Security Decisions
 
-### What I implemented
-
 **Upload layer**
-- File extension whitelist (pdf, png, jpg, jpeg, tiff only)
-- File size limit (20MB max)
-- Path traversal detection — blocks filenames containing `..`, `/`, `\`
-- Filenames sanitized with regex before display
-- Files stored with UUID names — original filename never touches disk
-- Max 10 files per request
+- Whitelisted file extensions (pdf, png, jpg, jpeg, tiff) and 20MB size limit
+- Path traversal protection and filename sanitization
+- Files stored with UUID names — original filenames never used as paths
+- Max 10 files per upload request
 
 **Storage layer**
-- Uploaded files stored in isolated `storage/uploads/` directory
-- Page images stored in per-document subdirectories under `storage/pages/`
-- No user-controlled paths used anywhere in file I/O
-- `.env` and `storage/` excluded from git via `.gitignore`
+- Uploaded files and page images isolated in per-document folders
+- `.env` and `storage/` excluded from git
 
 **Processing layer**
-- Documents processed in isolated threads
-- Errors caught and stored — never exposed as raw exceptions to client
-- Input text sanitized with bleach before sending to LLM
+- Each document processed in an isolated background thread
+- Errors caught and stored — raw stack traces never returned to the client
+- Pages processed one at a time to limit memory usage
 
 **API layer**
-- Rate limiting: 10 uploads/minute, 30 chat requests/minute per IP
-- CORS restricted to frontend origin only
-- Security headers on every response (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection)
-- Document IDs validated as UUIDs before any database or file operation
-- Chat queries sanitized and length-limited before retrieval
+- Rate limiting (10 uploads/min, 30 chat requests/min per IP)
+- CORS restricted to the deployed frontend origin
+- Security headers on all responses (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection)
+- Document IDs validated as UUIDs before any file/database operation
+- Chat input sanitized and length-limited
+- RAG strictly grounded in retrieved context — explicitly told to say "not found" rather than guess
 
-### What I considered but skipped (time constraints)
+**What I'd add given more time**
 - Authentication and per-user document isolation
-- Virus/malware scanning of uploaded files (e.g. ClamAV)
-- MIME type verification using file magic bytes (not just extension)
-- Encrypted storage of uploaded files at rest
-- Audit logging of all document access and deletion events
+- Malware scanning of uploads (e.g. ClamAV)
+- File content verification (magic bytes, not just extension)
+- Encryption at rest
+- Audit logging
+- Persistent database/storage instead of local disk for production durability
 
-### What I would add given more time
-- JWT-based auth so each user only sees their own documents
-- ClamAV integration for malware scanning before processing
-- File magic byte verification alongside extension checks
-- AES-256 encryption for files at rest
-- Full audit log with timestamps for compliance
-- Content Security Policy (CSP) headers on frontend
+## Known Limitations
+
+- Free-tier hosting (Render) has limited memory and ephemeral storage — large documents may take longer to process, and data can be reset on redeploy. Local execution does not have this issue.
+- Voice input works best in Chrome/Edge and requires an internet connection.
+
+## Sample Documents
+
+Included in `backend/sample_docs/`: a financial report, employee onboarding manual, AI research paper, an invoice, and a project requirements document — covering different document types for the classifier and RAG to demonstrate on.
+
+## Author
+
+Rohan Gorde — B.E. AI & Data Science Engineering, PVG's College of Engineering and Technology, Pune
+GitHub: [Rongo19](https://github.com/Rongo19)
