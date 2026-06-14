@@ -8,14 +8,19 @@ STORE_PATH = "storage/documents.json"
 def load_store() -> dict:
     if not os.path.exists(STORE_PATH):
         return {}
-    with open(STORE_PATH, "r") as f:
-        return json.load(f)
+    try:
+        with open(STORE_PATH, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, ValueError):
+        return {}
 
 
 def save_store(data: dict):
     os.makedirs(os.path.dirname(STORE_PATH), exist_ok=True)
-    with open(STORE_PATH, "w") as f:
+    tmp_path = STORE_PATH + ".tmp"
+    with open(tmp_path, "w") as f:
         json.dump(data, f, indent=2)
+    os.replace(tmp_path, STORE_PATH)
 
 
 def add_document(doc_id: str, metadata: dict):

@@ -42,8 +42,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[o for o in ALLOWED_ORIGINS if o],
     allow_credentials=True,
-    allow_methods=["POST", "GET", "DELETE"],
-    allow_headers=["Content-Type"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Serve page images statically
