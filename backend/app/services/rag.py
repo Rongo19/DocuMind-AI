@@ -1,11 +1,18 @@
 import os
 import chromadb
-from sentence_transformers import SentenceTransformer
 from groq import Groq
 from app.core.config import GROQ_API_KEY, CHROMA_DIR
 
 # ── init ───────────────────────────────────────────────────────────────────
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+_embedder = None
+
+def get_embedder():
+    global _embedder
+    if _embedder is None:
+        from sentence_transformers import SentenceTransformer
+        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
+    return _embedder
+
 
 chroma_client = chromadb.PersistentClient(path=CHROMA_DIR)
 collection = chroma_client.get_or_create_collection(
@@ -45,7 +52,7 @@ def index_document(doc_id: str, filename: str, pages: list[dict]):
         chunks = chunk_text(text)
         for i, chunk in enumerate(chunks):
             chunk_id = f"{doc_id}_p{page['page_num']}_c{i}"
-            embedding = embedder.encode(chunk).tolist()
+            embedding = get_embedder().encode(chunk).tolist()
 
             all_ids.append(chunk_id)
             all_chunks.append(chunk)
@@ -75,7 +82,7 @@ def retrieve_chunks(query: str, top_k: int = 5) -> list[dict]:
     if total == 0:
         return []
 
-    query_embedding = embedder.encode(query).tolist()
+    query_embedding = get_embedder().encode(query).tolist()
 
     results = collection.query(
         query_embeddings=[query_embedding],
