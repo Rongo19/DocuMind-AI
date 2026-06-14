@@ -27,13 +27,10 @@ def extract_text_from_image(image: Image.Image) -> str:
 def parse_pdf(file_path: str, doc_id: str) -> list[dict]:
     pages_dir = get_doc_dir(doc_id, PAGES_DIR)
 
-    if POPPLER_PATH:
-        images = convert_from_path(file_path, dpi=200, poppler_path=POPPLER_PATH)
-    else:
-        images = convert_from_path(file_path, dpi=200)
-
-    pages = []
     with pdfplumber.open(file_path) as pdf:
+        num_pages = len(pdf.pages)
+        pages = []
+
         for i, plumber_page in enumerate(pdf.pages):
             page_num = i + 1
 
@@ -47,12 +44,28 @@ def parse_pdf(file_path: str, doc_id: str) -> list[dict]:
                         cleaned = [cell or "" for cell in row]
                         table_text += " | ".join(cleaned) + "\n"
 
+            # Render only this page to image (low memory)
+            if POPPLER_PATH:
+                page_images = convert_from_path(
+                    file_path, dpi=100, poppler_path=POPPLER_PATH,
+                    first_page=page_num, last_page=page_num
+                )
+            else:
+                page_images = convert_from_path(
+                    file_path, dpi=100,
+                    first_page=page_num, last_page=page_num
+                )
+
+            page_image = page_images[0]
+
             if not text.strip():
-                text = extract_text_from_image(images[i])
+                text = extract_text_from_image(page_image)
 
             image_filename = f"page_{page_num}.jpg"
             image_path = os.path.join(pages_dir, image_filename)
-            images[i].save(image_path, "JPEG")
+            page_image.save(image_path, "JPEG")
+            page_image.close()
+            del page_images
 
             pages.append({
                 "page_num": page_num,
