@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import api from "@/lib/api";
+import { useSpeechRecognition } from "@/lib/useSpeechRecognition";
 
 interface Citation {
   filename: string;
@@ -22,6 +23,37 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const {
+    isListening,
+    transcript,
+    isSupported,
+    startListening,
+    stopListening,
+    resetTranscript,
+  } = useSpeechRecognition();
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Sync transcript into input box live
+  useEffect(() => {
+    if (transcript) {
+      const cleanText = transcript.replace(/\[interim\]/g, "").trim();
+      setInput(cleanText);
+    }
+  }, [transcript]);
+
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      resetTranscript();
+      setInput("");
+      startListening();
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -155,23 +187,70 @@ export default function ChatPage() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-800 p-4">
-        <div className="max-w-4xl mx-auto flex gap-3">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a question about your documents..."
-            rows={1}
-            className="flex-1 bg-gray-800 text-white rounded-xl px-4 py-3 resize-none outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={loading || !input.trim()}
-            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
-          >
-            Send
-          </button>
+      <div className="border-t border-gray-800/60 p-4 sticky bottom-0 bg-gray-950/90 backdrop-blur-md">
+        <div className="max-w-3xl mx-auto">
+          {/* Live transcript indicator */}
+          {isListening && (
+            <div className="flex items-center gap-2 mb-2 px-2 animate-fade-in">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+              </span>
+              <p className="text-xs text-red-400 font-medium">
+                Listening... speak now
+              </p>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                isListening
+                  ? "Listening..."
+                  : "Ask a question about your documents..."
+              }
+              rows={1}
+              className={`flex-1 bg-gray-900 border text-white rounded-xl px-4 py-3 resize-none outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all placeholder:text-gray-500 ${
+                isListening
+                  ? "border-red-500/50 ring-2 ring-red-500/20"
+                  : "border-gray-800"
+              }`}
+            />
+
+            {/* Mic button */}
+            {isSupported && (
+              <button
+                onClick={toggleListening}
+                disabled={loading}
+                title={isListening ? "Stop recording" : "Start voice input"}
+                className={`px-4 py-3 rounded-xl font-semibold transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed ${
+                  isListening
+                    ? "bg-red-600 hover:bg-red-500 text-white"
+                    : "bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700"
+                }`}
+              >
+                {isListening ? "⏹️" : "🎤"}
+              </button>
+            )}
+
+            <button
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-30 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-semibold transition-all active:scale-95"
+            >
+              Send
+            </button>
+          </div>
+
+          {!isSupported && (
+            <p className="text-xs text-gray-500 mt-2 px-1">
+              Voice input is not supported in this browser. Try Chrome or
+              Edge.
+            </p>
+          )}
         </div>
       </div>
 

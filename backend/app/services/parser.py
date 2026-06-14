@@ -3,10 +3,8 @@ import pytesseract
 import pdfplumber
 from pdf2image import convert_from_path
 from PIL import Image
-
-# ── paths ──────────────────────────────────────────────────────────────────
-TESSERACT_PATH = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-POPPLER_PATH   = r"C:\poppler\poppler-26.02.0\Library\bin"   
+from app.core.config import TESSERACT_PATH, POPPLER_PATH, PAGES_DIR, UPLOAD_DIR
+ 
 
 PAGES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "storage", "pages")
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "storage", "uploads")
@@ -29,7 +27,10 @@ def extract_text_from_image(image: Image.Image) -> str:
 def parse_pdf(file_path: str, doc_id: str) -> list[dict]:
     pages_dir = get_doc_dir(doc_id, PAGES_DIR)
 
-    images = convert_from_path(file_path, dpi=200, poppler_path=POPPLER_PATH)
+    if POPPLER_PATH:
+        images = convert_from_path(file_path, dpi=200, poppler_path=POPPLER_PATH)
+    else:
+        images = convert_from_path(file_path, dpi=200)
 
     pages = []
     with pdfplumber.open(file_path) as pdf:

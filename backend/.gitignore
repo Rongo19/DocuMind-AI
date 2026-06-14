@@ -3,3 +3,4 @@ venv/
 storage/
 __pycache__/
 *.pyc
+sample_docs/__pycache__/

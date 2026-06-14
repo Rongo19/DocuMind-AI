@@ -31,9 +31,16 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 # CORS — only allow our frontend
+import os
+
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    os.getenv("FRONTEND_URL", ""),
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[o for o in ALLOWED_ORIGINS if o],
     allow_credentials=True,
     allow_methods=["POST", "GET", "DELETE"],
     allow_headers=["Content-Type"],
